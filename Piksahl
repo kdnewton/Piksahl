@@ -1,0 +1,474 @@
+#!/usr/bin/perl -w
+
+#use DBI;
+use strict;
+use Tk;
+
+if ($#ARGV != 1) { print "Required: ./picross.pl <width> <height>\n"; exit; }
+
+my ($width, $height) = ($ARGV[0], $ARGV[1]);
+my $curCount = 0;
+my $percentPopulated = 0.33;
+my $count = $width * $height * $percentPopulated;
+my ($x, $y);
+my (@game2d, @answer2d, @rows, @colCount, @rowCount, @countByCol, @countByRow);
+
+my (@gameButton);
+
+#-------------------------------#
+# Figuring out how high/wide the column/row labels should be.
+#-------------------------------#
+my $maxColumnChars = int($height/2+0.5);
+my $maxRowChars = int($width/2+0.5);
+#-------------------------------#
+
+sub createBoard
+{
+ ##
+ ## Initializing a "2D" array game board
+ ##
+	for ($y = 0; $y < $height; $y++)
+	{
+		push @rows, "0";
+		push @rowCount, "0";
+	}
+	for ($x = 0; $x < $width; $x++)
+	{
+		push @answer2d, [ @rows ];
+		push @game2d, [ @rows ];
+		push @gameButton, [ @rows ];
+		push @colCount, "0";
+	}
+}
+
+sub populateBoard
+{
+ ##
+ ## Marking random squares for the user to find later
+ ##
+	while ($curCount < $count)
+	{
+		$x = rand($width);
+		$y = rand($height);
+		if (!$answer2d[$x][$y] =~ /1/)
+		{
+			$answer2d[$x][$y] = "1";
+			$rowCount[$y]++;
+			$colCount[$x]++;
+			$curCount++;
+		}
+	}
+}
+
+sub printAnswer
+{
+	for ($y=0;$y<$height;$y++)
+	{
+		for ($x=0;$x<$width;$x++)
+		{
+			print $answer2d[$x][$y];
+			if ($x == $width-1)
+			{
+				print "\n";
+			}
+		}
+	}
+}
+
+sub printBoard
+{
+	my $out = "";
+	my $colHead = "   ";
+	for ($y = 0; $y < $height; $y++)
+	{
+		if ($y == 1)
+		{
+			$colHead .= "\n   ";
+		}
+		for ($x = 0; $x < $width; $x++)
+		{
+			if ($y == 0)
+			{
+				$colHead .= "$colCount[$x]";
+			}
+			if ($y == 1)
+			{
+				$colHead .= "-";
+			}
+			if ($x == 0)
+			{
+				$out .= "$rowCount[$y] |";
+			}
+			$out .= "$game2d[$x][$y]";
+		}
+		$out .= "\n";
+	}
+	# Display the board as '#' where unselected
+	# except along the left edge of the board
+	$out =~ s/0/#/g;
+	$out =~ s/\n#/\n0/g;
+	$out = "$colHead\n$out";
+	print "$out\n";
+}
+
+sub buildCountByColumn
+{
+	my $localCount;
+	
+	for ($x=0;$x<$width;$x++)
+	{
+		$localCount = 0;
+		$countByCol[$x] = "0";
+		for ($y=0;$y<$height;$y++)
+		{
+			if ($answer2d[$x][$y] =~ /1/)
+			{
+				$localCount++;
+			}
+			elsif ($localCount != 0)
+			{
+				$countByCol[$x] .= "$localCount,";
+				$localCount = 0;
+			}
+		}
+		if ($localCount > 0)
+		{
+			# For cases when the last item in a column is a 1
+			$countByCol[$x] .= "$localCount,";
+		}
+		elsif (!$countByCol[$x] > 0)
+		{
+			$countByCol[$x] = "00,";
+		}
+		$countByCol[$x] =~ s/^0//;
+		chop($countByCol[$x]);
+		#~ print "$countByCol[$x]\n";
+	}
+}
+
+sub buildCountByRow
+{
+	my $localCount;
+
+	for ($y=0;$y<$height;$y++)
+	{
+		$localCount = 0;
+		$countByRow[$y] = "0";
+		for ($x=0;$x<$width;$x++)
+		{
+			if ($answer2d[$x][$y] =~ /1/)
+			{
+				$localCount++;
+			}
+			elsif ($localCount != 0)
+			{
+				$countByRow[$y] .= "$localCount,";
+				$localCount = 0;
+			}
+		}
+		if ($localCount > 0)
+		{
+			# For cases when the last item in a column is a 1
+			$countByRow[$y] .= "$localCount,";
+		}
+		elsif (!$countByRow[$y] > 0)
+		{
+			$countByRow[$y] = "00,";
+		}
+		$countByRow[$y] =~ s/^0//;
+		chop($countByRow[$y]);
+		#~ print "$countByRow[$y]\n";
+	}
+}
+
+#-----------------#
+# Transforms the string into a vertical "\n" infused string for column labelling
+#-----------------#
+sub StringToColumnLabel
+{
+	my $newLocalTemp;
+	foreach (split(",",shift))
+	{
+		$newLocalTemp .= "$_\n";
+	}
+	chomp($newLocalTemp);
+	return $newLocalTemp;
+}
+
+#-----------------#
+# Strips a string of "," for row labelling
+#-----------------#
+sub StringToRowLabel
+{
+	my $newLocalTemp = shift;
+	$newLocalTemp =~ s/,/   /g;
+	return $newLocalTemp;
+}
+
+sub buildBoardCount
+{
+	buildCountByColumn;
+	buildCountByRow;
+}
+
+#----------------#
+# Find the longest column label
+#----------------#
+sub getLongestColumn
+{
+	my $localMax = 0;
+	my $localIndex = 0;
+	foreach (@countByCol)
+	{
+		my $localString = $_;   ##
+		$localString =~ s/,//g; ## Don't want to change the contents of @countByRow
+		$localMax = length($localString) if length($localString) > $localMax;
+		$localIndex++;
+	}
+	return $localMax;
+}
+
+#----------------#
+# Find the longest row label
+#----------------#
+sub getLongestRow
+{
+	my $localMax = 0;
+	my $localIndex = 0;
+	foreach (@countByRow)
+	{
+		my $localString = $_;   ##
+		$localString =~ s/,//g; ## Don't want to change the contents of @countByRow
+		$localMax = length($localString) if length($localString) > $localMax;
+		$localIndex++;
+	}
+	return $localMax;
+}
+
+createBoard;
+populateBoard;
+buildBoardCount;
+printAnswer;
+#~ printBoard;
+
+my $iconSize = 20;
+my $menuHeight = 20;
+#--------------------------#
+# For use with the column/row labels, setting an appropriate size for the top and left buffers
+#--------------------------#
+my $charSizeColumn = 23;
+my $charSizeRow = 20;
+#~ my $leftBufferSize = 50;
+#~ my $topBufferSize = $leftBufferSize;
+my $leftBufferSize = &getLongestRow*$charSizeRow;
+my $topBufferSize = &getLongestColumn*$charSizeColumn;
+#--------------------------#
+my $rightBufferSize = 10;
+my $bottomBufferSize = $rightBufferSize;
+my $canvasWidth = $width*$iconSize+$leftBufferSize+$rightBufferSize;
+my $canvasHeight = $height*$iconSize+$topBufferSize+$bottomBufferSize;
+
+#~ print qq{
+#~ Dimensions: $canvasWidth x $canvasHeight
+#~ Icon Size: $iconSize
+#~ Buffer Top/Right/Bottom/Left: $topBufferSize/$rightBufferSize/$bottomBufferSize/$leftBufferSize
+#~ };
+
+my $mainColor = '#CFCFCF';
+
+my $MW = MainWindow->new;
+
+my $MB = $MW->Frame(	-relief => 'raised',
+			-borderwidth => 1,
+			-background => $mainColor,
+			-height => 20 )->pack(	-side => 'top',
+						-fill => 'x' );
+
+my $mFile = $MB->Menubutton( 	-text => 'File',
+				-background => $mainColor,
+				-foreground => 'black',
+				-underline => 0 )->pack( -side => 'left' );
+$mFile->command(-label => '~Quit',
+		-command => sub { $MW->destroy } );
+
+my $mHelp = $MB->Menubutton(	-text => 'Help',
+				-background => $mainColor,
+				-foreground => 'black',
+				-underline => 0)->pack( -side => 'right' );
+$mHelp->command(-label => '~About',
+		-command => sub { $MW->destroy } );
+
+my $frameGameBoard = $MW->Frame->pack;
+my $c = $frameGameBoard->Canvas(-width => $canvasWidth,
+				-background => $mainColor,
+				-height => $canvasHeight)->pack;
+
+my (@topLabel, @leftLabel);
+
+$c->createRectangle(	$leftBufferSize,
+			$topBufferSize,
+			$leftBufferSize+$width*$iconSize,
+			$topBufferSize+$height*$iconSize,
+			-fill => 'black' );
+
+#---------------------------#
+# Column labels
+#---------------------------#
+my $labelIndex = 0;
+my @ColumnLabel;
+for ($x = $leftBufferSize; $x < $canvasWidth-$rightBufferSize; $x+=$iconSize)
+{
+	$c->createRectangle(	$x,
+				0,
+				$x+$iconSize,
+				$topBufferSize-1,
+				-activefill => '#C7DFDF',
+				-outline => '#EFEFEF',
+				-fill => '#DFDFDF',
+				-tags =>['bufferSide',
+					"row.-0",
+					"col.$x"] );
+	
+	my $localLabel = $c->Label( -background=>'#DFDFDF', -activebackground=>'#FF0000', -text=>StringToColumnLabel( $countByCol[$labelIndex] ) )->place( -x=>($x+4), -y=>'1' );
+	$ColumnLabel[$labelIndex] = $localLabel;
+	$labelIndex++;
+}
+
+#---------------------------#
+# Row labels
+#---------------------------#
+$labelIndex = 0;
+my @RowLabel;
+for ($y = $topBufferSize; $y < $canvasHeight-$bottomBufferSize; $y+=$iconSize)
+{
+		$c->createRectangle(	0,
+					$y,
+					$leftBufferSize-1,
+					$y+$iconSize,
+					-activefill => '#C7DFDF',
+					-outline => '#EFEFEF',
+					-fill => '#DFDFDF',
+					-tags =>['bufferSide',
+						"row.$y",
+						"col.-0"] );
+	
+	my $localLabel = $c->Label( -background=>'#DFDFDF', -text=>StringToRowLabel( $countByRow[$labelIndex] ) )->place( -x=>'6', -y=>$y );
+	$RowLabel[$labelIndex] = $localLabel;
+	$labelIndex++;
+}
+
+my $yPos = 0;
+my $xPos;
+for ($y = $topBufferSize; $y < $canvasHeight-$bottomBufferSize; $y+=$iconSize)
+{
+	$xPos = 0;
+	for ($x = $leftBufferSize; $x < $canvasWidth-$rightBufferSize; $x+=$iconSize)
+	{
+		$c->createRectangle(	$x,
+					$y,
+					$x+$iconSize,
+					$y+$iconSize,
+					-fill => '#BFBFBF',
+					-tags =>['rect',
+						"cell[$xPos][$yPos]",
+						"row.$y",
+						"col.$x"] );
+		$xPos++;
+	}
+	$yPos++;
+}
+
+$c->bind('rect', '<Enter>', \&enter );
+$c->bind('rect', '<Leave>', \&leave );
+$c->bind('rect', '<Button-1>', \&click );
+
+MainLoop;
+
+sub click
+{
+	my ($canv) = @_;
+	
+	my @tags = $canv->gettags( $canv->find('withtag', 'current') );
+	my ($xPos, $yPos);
+	my @pos;
+	my ($activeTag) = 0;
+	$activeTag = 1 if ( grep /^isActive/, @tags );
+	if ($activeTag eq 0)
+	{
+		$canv->addtag('isActive','withtag','current');
+		$canv->itemconfigure('current', -fill => '#0073FF' );
+		
+		@pos = grep /^cell\[\d+\]\[\d+\]/, @tags;
+		$xPos = $pos[0];
+		$yPos = $pos[0];
+		$xPos =~ s/^cell\[(\d+)\]\[\d+\]/$1/;
+		$yPos =~ s/^cell\[\d+\]\[(\d+)\]/$1/;
+		#~ print "x: $xPos\ty: $yPos\n";
+		#~ This is where we start to manipulate the player's game board
+	}
+	else
+	{
+		$canv->dtag('current','isActive');
+		$canv->itemconfigure('current', -fill => '#BFBFBF' );
+		
+		@pos = grep /^cell\[\d+\]\[\d+\]/, @tags;
+		$xPos = $pos[0];
+		$yPos = $pos[0];
+		$xPos =~ s/^cell\[(\d+)\]\[\d+\]/$1/;
+		$yPos =~ s/^cell\[\d+\]\[(\d+)\]/$1/;
+		#~ print "x: $xPos\ty: $yPos\n";
+		#~ This is where we start to manipulate the player's game board
+	}
+	&PushButtonAt($xPos,$yPos);
+	&printBoard;
+}
+
+sub PushButtonAt
+{
+	my $xPos = shift;
+	my $yPos = shift;
+	
+	if ($game2d[$xPos][$yPos] != 1)
+	{
+		$game2d[$xPos][$yPos] = 1;
+	}
+	else
+	{
+		$game2d[$xPos][$yPos] = 0;
+	}
+}
+
+sub getRowCol
+{
+	my ($canv) = @_;
+	my @tags = $canv->gettags( $canv->find('withtag', 'current') );
+	my ($row) = ( grep /^row\d*/, @tags );
+	my ($col) = ( grep /^col\d*/, @tags );
+	#~ print "$col - $row\n";
+	return ($row,$col);
+}
+
+sub enter
+{
+	my ($canv) = @_;
+	my ($r,$c) = getRowCol($canv);
+	#~ print "$r $c\n";
+	$canv->itemconfigure($r, -fill=>$canv->itemcget($r,-activefill) );
+	$canv->itemconfigure($c, -fill=>$canv->itemcget($c,-activefill) );
+	$canv->itemconfigure('isActive', -fill => '#0073FF' );
+	#~ $ColumnLabel[0]->configure( -state=>'active' );
+	#~ $RowLabel[0]->configure( -state=>'active' );
+}
+
+sub leave
+{
+	my ($canv) = @_;
+	$canv->itemconfigure('rect', -fill=>'#BFBFBF');
+	$canv->itemconfigure('bufferSide', -fill=>'#DFDFDF');
+	$canv->itemconfigure('isActive', -fill => '#0073FF' );
+	#~ $yoink->configure( -state=>'normal' );
+	#~ $ColumnLabel[0]->configure( -state=>'normal' );
+	#~ $RowLabel[0]->configure( -state=>'normal' );
+}
+
+__END__

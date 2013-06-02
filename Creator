@@ -1,0 +1,41 @@
+#!/usr/bin/perl -w
+
+use DBI;
+use Tk;
+use strict;
+
+###########################################
+###########################################
+##
+## DB Stuff initialized
+##
+###########################################
+###########################################
+                                       ####
+
+my $dbh = DBI->connect ("dbi:SQLite:DB/Piksahl.sqlite") || die "Cannot connect: $dbi::errstr";
+
+                                       ####
+###########################################
+###########################################
+
+my $mainColor = '#CFCFCF';
+my $MW = MainWindow->new;
+
+my $MB = $MW->Frame( -relief => 'raised',
+				-borderwidth => 1,
+				-background => $mainColor,
+				-height => 20 )->pack( -side => 'top',
+									-fill => 'x' );
+
+my $mFile = $MB->Menubutton( -text => 'File',
+					-background => $mainColor,
+					-foreground => 'black',
+					-underline => 0 )->pack( -side => 'left' );
+$mFile->command( -label => '~Quit',
+			-command => sub { $MW->destroy } );
+
+MainLoop;
+
+
+__END__
